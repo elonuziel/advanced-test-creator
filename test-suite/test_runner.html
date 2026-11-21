@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Test Creator — Component Test Runner</title>
+    <link rel="icon" type="image/svg+xml" href="../favicon.svg">
+    <link rel="stylesheet" href="../style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+        }
+        body {
+            direction: ltr;
+            text-align: left;
+        }
+        .test-container {
+            max-width: 1040px;
+            margin: 0 auto;
+            padding: 32px 20px;
+        }
+        .test-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 24px;
+            box-shadow: var(--shadow-sm);
+        }
+        .test-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .test-title {
+            font-size: 1.2rem;
+            font-weight: 700;
+            margin: 0;
+            color: var(--primary-color);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .test-summary-badge {
+            font-size: 0.88rem;
+            font-weight: 600;
+            padding: 5px 16px;
+            border-radius: 20px;
+            background: var(--input-bg);
+        }
+        .test-item {
+            display: flex;
+            flex-direction: column;
+            padding: 12px 16px;
+            border-radius: 10px;
+            margin-bottom: 10px;
+            background: var(--input-bg);
+            font-size: 0.92rem;
+            border-left: 4px solid var(--border-color);
+            transition: all 0.15s ease;
+        }
+        .test-item.pass {
+            border-left-color: var(--success-color);
+        }
+        .test-item.fail {
+            border-left-color: var(--error-color);
+            background: var(--error-bg);
+        }
+        .test-item-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            width: 100%;
+        }
+        .test-name {
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+        .test-status {
+            font-weight: 700;
+            padding: 3px 10px;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .test-status.pass {
+            background: var(--success-bg);
+            color: var(--success-color);
+        }
+        .test-status.fail {
+            background: var(--error-bg);
+            color: var(--error-color);
+        }
+        .test-duration {
+            font-size: 0.78rem;
+            color: var(--text-secondary);
+            font-family: 'JetBrains Mono', monospace;
+            margin-left: 8px;
+        }
+        .test-details {
+            margin-top: 8px;
+            font-size: 0.83rem;
+            color: var(--text-secondary);
+            line-height: 1.5;
+        }
+        .test-error-details {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.82rem;
+            color: var(--error-color);
+            margin-top: 8px;
+            padding: 10px;
+            background: rgba(239, 68, 68, 0.08);
+            border-radius: 8px;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        .inspect-box {
+            margin-top: 8px;
+            padding: 8px 12px;
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.78rem;
+            overflow-x: auto;
+            color: var(--text-primary);
+        }
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 14px;
+            margin-top: 16px;
+        }
+        .metric-card {
+            background: var(--input-bg);
+            padding: 14px 18px;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+        }
+        .metric-label {
+            font-size: 0.78rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-secondary);
+            margin-bottom: 4px;
+        }
+        .metric-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--primary-color);
+        }
+        .nav-actions {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 24px;
+            align-items: center;
+        }
+    </style>
+</head>
+<body>
+    <header class="navbar">
+        <div class="logo">🧪 Component Integration & Unit Test Suite</div>
+        <div class="controls">
+            <a href="../index.html" class="nav-link">← Quiz Builder</a>
+            <a href="../quiz_player.html" class="nav-link">← Quiz Player</a>
+            <button id="theme-toggle" class="icon-btn" aria-label="Toggle theme">
+                <svg id="theme-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+            </button>
+        </div>
+    </header>
+
+    <main class="test-container">
+        <div class="nav-actions">
+            <button id="run-all-tests-btn" class="primary-btn">🔄 Re-Run All Test Suites</button>
+            <label style="display:flex; align-items:center; gap:6px; font-size:0.85rem; cursor:pointer; color:var(--text-secondary);">
+                <input type="checkbox" id="toggle-inspect-data" style="accent-color:var(--primary-color);">
+                <span>Show Data Inspection Logs</span>
+            </label>
+        </div>
+
+        <div class="test-card">
+            <div class="test-header">
+                <h2 class="test-title">📊 Execution Overview & System Metrics</h2>
+                <span id="overall-badge" class="test-summary-badge">Running tests...</span>
+            </div>
+            <p style="color:var(--text-secondary); font-size: 0.9rem; margin: 0 0 12px;">
+                Comprehensive browser execution suite validating data normalization, regex parsing, CSV/XLS answer key merging, state hashing, and flag persistence.
+            </p>
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-label">Total Test Cases</div>
+                    <div id="metric-total" class="metric-value">0</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Passed</div>
+                    <div id="metric-passed" class="metric-value" style="color:var(--success-color);">0</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Failed</div>
+                    <div id="metric-failed" class="metric-value" style="color:var(--error-color);">0</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Total Duration</div>
+                    <div id="metric-duration" class="metric-value">0 ms</div>
+                </div>
+            </div>
+        </div>
+
+        <div id="test-results-container"></div>
+    </main>
+
+    <script src="../quiz-core.js"></script>
+    <script src="../quiz-export.js"></script>
+    <script src="../js/cropper-modal.js"></script>
+    <script>
+        // ── Theme Manager ──────────────────────────────────────────────────────
+        let theme = localStorage.getItem('theme') || 'light';
+        function setTheme(newTheme) {
+            theme = newTheme;
+            document.documentElement.setAttribute('data-theme', theme);
+            localStorage.setItem('theme', theme);
+            const icon = document.getElementById('theme-icon');
+            if (theme === 'dark') {
+                icon.innerHTML = '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path>';
+            } else {
+                icon.innerHTML = '<circle cx="12" cy="12" r="4"></circle><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="m4.93 4.93 1.41 1.41"></path><path d="m17.66 17.66 1.41 1.41"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="m6.34 17.66-1.41 1.41"></path><path d="m19.07 4.93-1.41 1.41"></path>';
+            }
+        }
+        setTheme(theme);
+        document.getElementById('theme-toggle').addEventListener('click', () => setTheme(theme === 'light' ? 'dark' : 'light'));
+
+        // ── Assertion Helpers ──────────────────────────────────────────────────
+        function assert(condition, message) {
+            if (!condition) throw new Error(message || 'Assertion failed');
+        }
+
+        function assertEqual(actual, expected, message) {
+            if (actual !== expected) {
+                throw new Error(`${message || 'Equal check failed'}: Expected "${expected}", but received "${actual}"`);
+            }
+        }
+
+        function assertDeepEqual(actual, expected, message) {
+            const actualStr = JSON.stringify(actual);
+            const expectedStr = JSON.stringify(expected);
+            if (actualStr !== expectedStr) {
+                throw new Error(`${message || 'Deep equal check failed'}: Expected ${expectedStr}, but received ${actualStr}`);
+            }
+        }
+
+        // ── Core Logic Implementation Under Test ──────────────────────────────
+        const {
+            normalizeWhitespace,
+            stripExamFooterArtifacts,
+            normalizeQuestionsJson,
+            parseCsvRows,
+            extractAnswersForForm,
+            mergeAnswers,
+            getStorageKey,
+            getCustomSelectedIndices,
+            validateQuestions
+        } = window.QuizCore;
+
+        const QuizExport = window.QuizExport;
+
+        // ── Test Suites ───────────────────────────────────────────────────────
+        async function runSuite() {
+            const container = document.getElementById('test-results-container');
+            container.innerHTML = '';
+            const showInspect = document.getElementById('toggle-inspect-data').checked;
+
+            const suites = [
+                {
+                    name: '1. JSON Schema Normalization & Cleanup (normalizeQuestionsJson)',
+                    description: 'Validates raw JSON schema ingestion, whitespace normalization, footer removal, and option letter prefix stripping.',
+                    tests: [
+                        {
+                            name: 'Strips option letter prefixes (א., ב., ג.) and cleans double spaces',
+                            details: 'Given options with Hebrew prefixes, verifies that prefixes are stripped while preserving choice text.',
+                            fn: () => {
+                                const input = [{ question: '  שאלה  1.  מהו DNA?  ', options: ['א. חומצת גרעין', 'ב. חלבון', 'ג. שומן'] }];
+                                const res = normalizeQuestionsJson(input);
+                                assertEqual(res.length, 1, 'Question count');
+                                assertEqual(res[0].question, 'שאלה 1. מהו DNA?', 'Clean question text');
+                                assertDeepEqual(res[0].options, ['חומצת גרעין', 'חלבון', 'שומן'], 'Clean options array');
+                                return { input, output: res };
+                            }
+                        },
+                        {
+                            name: 'Removes PDF exam footer artifacts (עמוד X מתוך Y)',
+                            details: 'Verifies that repetitive exam page footers are stripped automatically from question headers.',
+                            fn: () => {
+                                const input = [{ question: 'מהו תפקוד המיטוכונדריה? עמוד 3 מתוך 12 - סוף המבחן -', options: ['ייצור אנרגיה', 'תפיסת סוכרים'] }];
+                                const res = normalizeQuestionsJson(input);
+                                assertEqual(res[0].question, 'מהו תפקוד המיטוכונדריה?', 'Footer artifact stripped');
+                                return { input, output: res };
+                            }
+                        },
+                        {
+                            name: 'Filters out empty questions & resets out-of-bounds correctIndex',
+                            details: 'Ensures questions without text/options are dropped and invalid answer indices fall back to 0.',
+                            fn: () => {
+                                const input = [
+                                    { question: '', options: ['תשובה 1'] },
+                                    { question: 'שאלה תקינה', options: ['תשובה 1', 'תשובה 2'], correctIndex: 99 }
+                                ];
+                                const res = normalizeQuestionsJson(input);
+                                assertEqual(res.length, 1, 'Valid question count');
+                                assertEqual(res[0].correctIndex, 0, 'Reset out-of-bound correctIndex to 0');
+                                return { input, output: res };
+                            }
+                        }
+                    ]
+                },
+                {
+                    name: '2. CSV & XLS Answer Key Merging (parseCsvRows & mergeAnswers)',
+                    details: 'Validates CSV cell splitting, Form number column matching, and 0-based option index alignment.',
+                    tests: [
+                        {
+                            name: 'Parses quoted CSV rows and extracts Form 76 and Form 32 answer maps',
+                            details: 'Verifies that Hebrew letters (א, ב, ג, ד) and numbers (1, 2, 3, 4) map correctly to 0-based indices.',
+                            fn: () => {
+                                const csv = 'Form,Q1,Q2,Q3,Q4\n76,א,ב,ג,ד\n32,4,3,2,1';
+                                const rows = parseCsvRows(csv);
+                                const map76 = extractAnswersForForm(rows, '76');
+                                const map32 = extractAnswersForForm(rows, '32');
+                                assertDeepEqual(map76, { 1: 0, 2: 1, 3: 2, 4: 3 }, 'Form 76 index map');
+                                assertDeepEqual(map32, { 1: 3, 2: 2, 3: 1, 4: 0 }, 'Form 32 index map');
+                                return { rows, map76, map32 };
+                            }
+                        },
+                        {
+                            name: 'Merges correctIndex into questions array and disables random shuffling',
+                            details: 'Verifies that applying a CSV answer key sets correctIndex and sets shuffleOptions = false.',
+                            fn: () => {
+                                const questions = [
+                                    { question: 'Q1', options: ['A', 'B', 'C'], correctIndex: 0, shuffleOptions: true },
+                                    { question: 'Q2', options: ['A', 'B', 'C'], correctIndex: 0, shuffleOptions: true }
+                                ];
+                                const answerMap = { 1: 2, 2: 1 };
+                                const merged = mergeAnswers(questions, answerMap);
+                                assertEqual(merged[0].correctIndex, 2, 'Q1 correctIndex updated to 2 (C)');
+                                assertEqual(merged[1].correctIndex, 1, 'Q2 correctIndex updated to 1 (B)');
+                                assertEqual(merged[0].shuffleOptions, false, 'Q1 shuffle disabled');
+                                return { questions, answerMap, merged };
+                            }
+                        }
+                    ]
+                },
+                {
+                    name: '3. LocalStorage Progress & Storage Hashing (getStorageKey)',
+                    description: 'Validates deterministic hash generation for user answers and bookmark persistence keys.',
+                    tests: [
+                        {
+                            name: 'Generates deterministic storage keys based on question contents',
+                            details: 'Ensures the exact same question set generates identical storage keys across page reloads.',
+                            fn: () => {
+                                const q1 = [{ question: 'Botany question test', options: ['1', '2'] }];
+                                const q2 = [{ question: 'Physics question test', options: ['1', '2'] }];
+                                const key1 = getStorageKey(q1);
+                                const key1_repeat = getStorageKey(q1);
+                                const key2 = getStorageKey(q2);
+
+                                assertEqual(key1, key1_repeat, 'Deterministic hash matching');
+                                assert(key1 !== key2, 'Distinct question sets produce distinct keys');
+                                assert(key1.startsWith('quiz_answers_'), 'Prefix starts with quiz_answers_');
+                                return { key1, key2 };
+                            }
+                        }
+                    ]
+                },
+                {
+                    name: '4. Question Flagging & Practice Filter State',
+                    description: 'Validates question bookmarking state creation and practice filter filtering.',
+                    tests: [
+                        {
+                            name: 'Initializes and updates userFlags boolean array correctly',
+                            details: 'Verifies flag toggle behavior and bookmark count badge calculation.',
+                            fn: () => {
+                                const totalQuestions = 5;
+                                const userFlags = new Array(totalQuestions).fill(false);
+                                userFlags[1] = true;
+                                userFlags[3] = true;
+
+                                const flaggedIndices = userFlags.reduce((acc, isFlagged, idx) => {
+                                    if (isFlagged) acc.push(idx + 1);
+                                    return acc;
+                                }, []);
+
+                                assertDeepEqual(flaggedIndices, [2, 4], 'Flagged question numbers (1-indexed)');
+                                assertEqual(userFlags.filter(Boolean).length, 2, 'Total flagged count');
+                                return { userFlags, flaggedIndices };
+                            }
+                        }
+                    ]
+                },
+                {
+                    name: '5. Mix & Match Custom Practice & Manual Cherrypicking (getCustomSelectedIndices)',
+                    description: 'Validates category preset combinations (Wrong + Unanswered + Starred) and manual question selection with zero duplicate indices.',
+                    tests: [
+                        {
+                            name: 'Combines checked categories and manual cherrypicking with zero duplicates',
+                            details: 'Ensures questions belonging to multiple categories (e.g. both wrong and starred) are included exactly once.',
+                            fn: () => {
+                                const userAnswers = [
+                                    { selectedOptionId: 1, isCorrect: false }, // Q1 Wrong
+                                    { selectedOptionId: 0, isCorrect: true },  // Q2 Correct
+                                    null,                                     // Q3 Unanswered
+                                    { selectedOptionId: 0, isCorrect: true }   // Q4 Correct
+                                ];
+                                const userFlags = [true, false, false, true]; // Q1 & Q4 Starred
+                                const testQuestions = userAnswers.map((_, index) => ({ question: `Q${index + 1}` }));
+
+                                const selected = getCustomSelectedIndices(testQuestions, userAnswers, userFlags, {
+                                    wrong: true,
+                                    unanswered: true,
+                                    flagged: true
+                                }, [2]);
+
+                                assertDeepEqual(selected, [0, 2, 3], 'Combined selected indices without duplicates');
+                                return { userAnswers, userFlags, manualSelection: [2], selected };
+                            }
+                        }
+                    ]
+                },
+                {
+                    name: '6. Question Validation (validateQuestions)',
+                    description: 'Validates schema validation rules for questions, options counts, answer indices, and page numbers.',
+                    tests: [
+                        {
+                            name: 'Rejects malformed questions with actionable error messages',
+                            details: 'Ensures missing question text, too few options, invalid correctIndex, and bad sourcePage are caught.',
+                            fn: () => {
+                                const errors = validateQuestions([
+                                    { question: '', options: ['only one'], correctIndex: 3 },
+                                    { question: 'Valid', options: ['A', 'B'], correctIndex: 0, sourcePage: 0 }
+                                ]);
+                                assertEqual(errors.length, 4, 'Total validation error count');
+                                assert(errors.some((err) => err.includes('שאלה 1: חסר טקסט')), 'Missing question error');
+                                assert(errors.some((err) => err.includes('שאלה 2: sourcePage אינו תקין')), 'Invalid sourcePage error');
+                                return { errors };
+                            }
+                        }
+                    ]
+                },
+                {
+                    name: '7. Standalone Quiz Export (QuizExport)',
+                    description: 'Validates script injection, stylesheet inlining, and safe script terminator escaping.',
+                    tests: [
+                        {
+                            name: 'Inlines stylesheets, JSON questions, scripts and neutralizes script injection',
+                            details: 'Ensures script tags inside questions are escaped to prevent XSS breakout.',
+                            fn: () => {
+                                const template = '<link rel="stylesheet" href="style.css"><script id="quiz-data" type="application/json"></script><script src="quiz-core.js"></script><script src="app.js"></script>';
+                                let html = QuizExport.injectStylesheet(template, 'body{background:red;}');
+                                html = QuizExport.injectInlineQuestions(html, [{ question: '</script><script>alert(1)</script>', options: ['A', 'B'], correctIndex: 0 }]);
+                                html = QuizExport.injectScript(html, 'quiz-core.js', 'console.log("core");');
+                                html = QuizExport.injectScript(html, 'app.js', 'console.log("app");');
+
+                                assert(html.includes('<style>body{background:red;}</style>'), 'Inlined CSS');
+                                assert(!html.includes('</script><script>alert(1)'), 'Escaped closing script tag');
+                                assert(html.includes('<script>console.log("core");</script>'), 'Inlined quiz-core');
+                                assert(html.includes('<script>console.log("app");</script>'), 'Inlined app');
+                                return { htmlLength: html.length };
+                            }
+                        }
+                    ]
+                }
+            ,
+                {
+                    name: '8. Cropper Modal PDF Byte Retrieval (CropperModal.getPdfBytesForCrop)',
+                    description: 'Validates getPdfBytesForCrop with empty/missing state, Uint8Array/ArrayBuffer state, file input fallback, and file read rejections.',
+                    tests: [
+                        {
+                            name: 'Returns null when appState is uninitialized or missing PDF data',
+                            details: 'Ensures getPdfBytesForCrop resolves to null without throwing when no PDF sources exist.',
+                            fn: async () => {
+                                const CropperModal = window.CropperModal;
+                                CropperModal.initCropperModal({}, {});
+                                const result = await CropperModal.getPdfBytesForCrop();
+                                assertEqual(result, null, 'Returns null for empty state');
+                                return { result };
+                            }
+                        },
+                        {
+                            name: 'Returns Uint8Array when appState contains pdfBytes array',
+                            details: 'Ensures existing pdfBytes in appState are returned as a Uint8Array.',
+                            fn: async () => {
+                                const CropperModal = window.CropperModal;
+                                const pdfBytes = [1, 2, 3, 4, 5];
+                                CropperModal.initCropperModal({ pdfBytes }, {});
+                                const result = await CropperModal.getPdfBytesForCrop();
+                                assert(result instanceof Uint8Array, 'Result is Uint8Array');
+                                assertDeepEqual(Array.from(result), pdfBytes, 'Matches original bytes');
+                                return { result: Array.from(result) };
+                            }
+                        },
+                        {
+                            name: 'Converts and caches pdfArrayBuffer into pdfBytes',
+                            details: 'Ensures pdfArrayBuffer in appState is sliced, converted to Uint8Array, and cached in pdfBytes.',
+                            fn: async () => {
+                                const CropperModal = window.CropperModal;
+                                const buffer = new Uint8Array([10, 20, 30]).buffer;
+                                const state = { pdfArrayBuffer: buffer };
+                                CropperModal.initCropperModal(state, {});
+                                const result = await CropperModal.getPdfBytesForCrop();
+                                assert(result instanceof Uint8Array, 'Result is Uint8Array');
+                                assertDeepEqual(Array.from(result), [10, 20, 30], 'Matches buffer content');
+                                assert(state.pdfBytes instanceof Uint8Array, 'Cached state.pdfBytes exists');
+                                return { result: Array.from(result) };
+                            }
+                        },
+                        {
+                            name: 'Reads file input arrayBuffer when state lacks cached bytes',
+                            details: 'Ensures file input arrayBuffer is read, cached in state, and returned.',
+                            fn: async () => {
+                                const CropperModal = window.CropperModal;
+                                const state = {};
+                                const mockFile = {
+                                    arrayBuffer: async () => new Uint8Array([100, 200]).buffer
+                                };
+                                CropperModal.initCropperModal(state, { pdfFile: { files: [mockFile] } });
+                                const result = await CropperModal.getPdfBytesForCrop();
+                                assert(result instanceof Uint8Array, 'Result is Uint8Array');
+                                assertDeepEqual(Array.from(result), [100, 200], 'Matches file buffer content');
+                                return { result: Array.from(result) };
+                            }
+                        },
+                        {
+                            name: 'Propagates error when pdfFile input arrayBuffer fails to read',
+                            details: 'Ensures file read rejections are thrown as async rejections.',
+                            fn: async () => {
+                                const CropperModal = window.CropperModal;
+                                const mockFile = {
+                                    arrayBuffer: async () => { throw new Error('Failed to read PDF file bytes'); }
+                                };
+                                CropperModal.initCropperModal({}, { pdfFile: { files: [mockFile] } });
+                                let caught = false;
+                                try {
+                                    await CropperModal.getPdfBytesForCrop();
+                                } catch (err) {
+                                    caught = true;
+                                    assertEqual(err.message, 'Failed to read PDF file bytes', 'Error message matches');
+                                }
+                                assert(caught, 'Error was thrown and caught');
+                                return { caught };
+                            }
+                        }
+                    ]
+                }
+            ];
+
+            let totalPassed = 0;
+            let totalFailed = 0;
+            let totalDurationMs = 0;
+
+            const globalStart = performance.now();
+
+            for (const suite of suites) {
+                const card = document.createElement('div');
+                card.className = 'test-card';
+
+                let suiteHtml = `<div class="test-header">
+                    <div>
+                        <h3 class="test-title">📁 ${suite.name}</h3>
+                        ${suite.description ? `<p style="margin:4px 0 0;font-size:0.83rem;color:var(--text-secondary);">${suite.description}</p>` : ''}
+                    </div>
+                </div>`;
+
+                for (const test of suite.tests) {
+                    let isPass = true;
+                    let errorMsg = '';
+                    let inspectData = null;
+                    const startMs = performance.now();
+
+                    try {
+                        inspectData = await test.fn();
+                        totalPassed++;
+                    } catch (err) {
+                        isPass = false;
+                        errorMsg = err.message;
+                        totalFailed++;
+                    }
+
+                    const elapsedMs = (performance.now() - startMs).toFixed(2);
+
+                    suiteHtml += `
+                        <div class="test-item ${isPass ? 'pass' : 'fail'}">
+                            <div class="test-item-header">
+                                <div class="test-name">
+                                    ${test.name}
+                                    <span class="test-duration">(${elapsedMs} ms)</span>
+                                </div>
+                                <span class="test-status ${isPass ? 'pass' : 'fail'}">${isPass ? 'PASS ✓' : 'FAIL ✕'}</span>
+                            </div>
+                            ${test.details ? `<div class="test-details">${test.details}</div>` : ''}
+                            ${errorMsg ? `<div class="test-error-details">❌ Error Traceback:\n${errorMsg}</div>` : ''}
+                            ${(showInspect && inspectData) ? `<pre class="inspect-box">🔍 Inspect Payload:\n${JSON.stringify(inspectData, null, 2)}</pre>` : ''}
+                        </div>
+                    `;
+                }
+
+                card.innerHTML = suiteHtml;
+                container.appendChild(card);
+            }
+
+            totalDurationMs = (performance.now() - globalStart).toFixed(2);
+
+            // Update Metrics Cards
+            document.getElementById('metric-total').textContent = totalPassed + totalFailed;
+            document.getElementById('metric-passed').textContent = totalPassed;
+            document.getElementById('metric-failed').textContent = totalFailed;
+            document.getElementById('metric-duration').textContent = `${totalDurationMs} ms`;
+
+            const badge = document.getElementById('overall-badge');
+            if (totalFailed === 0) {
+                badge.textContent = `All ${totalPassed} Tests Passed Successfully! ✓`;
+                badge.style.background = 'var(--success-bg)';
+                badge.style.color = 'var(--success-color)';
+            } else {
+                badge.textContent = `${totalFailed} of ${totalPassed + totalFailed} Tests Failed! ✕`;
+                badge.style.background = 'var(--error-bg)';
+                badge.style.color = 'var(--error-color)';
+            }
+        }
+
+        document.getElementById('run-all-tests-btn').addEventListener('click', runSuite);
+        document.getElementById('toggle-inspect-data').addEventListener('change', runSuite);
+        runSuite();
+    </script>
+</body>
+</html>

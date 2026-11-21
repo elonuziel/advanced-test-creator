@@ -1,0 +1,5 @@
+{
+  "name": "Interactive Hebrew Quiz Generator",
+  "description": "מחולל מבחנים בעברית – העלה קובץ PDF סרוק, חלץ שאלות באמצעות Gemini OCR, וצור מבחן אינטראקטיבי להורדה.",
+  "requestFramePermissions": []
+}

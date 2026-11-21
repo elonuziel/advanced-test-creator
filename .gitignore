@@ -1,0 +1,60 @@
+# Sample test files & test runs
+tests/
+runs/
+test/
+
+# Python & Pytest Caches
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.venv/
+venv/
+env/
+*.egg-info/
+.eggs/
+*.egg
+
+# Coverage & Linters
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# PyInstaller Build Outputs & Binaries
+dist/
+build/
+*.spec.bak
+quiz-builder-app/dist/
+quiz-builder-app/build/
+
+# Generated Standalone Quiz Exports
+interactive_quiz*.html
+test-suite/fixtures/generated-quiz.html
+
+# Playwright output
+test-results/
+playwright-report/
+blob-report/
+
+# OS & IDE Artifacts
+.DS_Store
+Thumbs.db
+desktop.ini
+*.ini
+!pytest.ini
+.vscode/
+.idea/
+.antigravity/
+
+# Temporary & Log Files
+*.log
+*.tmp
+*.tmp.md
+*.bak
+*.manifest
+
+node_modules/

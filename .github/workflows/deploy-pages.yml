@@ -1,0 +1,115 @@
+name: Deploy site to GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+      - feat-site
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python test dependencies
+        run: python -m pip install --upgrade pip && python -m pip install -e 'quiz-builder-app[dev]'
+
+      - name: Install Qt runtime libraries
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libxkbcommon-x11-0
+
+      - name: Run Python tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m pytest -q
+
+      - name: Run Component Integrity Unit Tests
+        run: node test-suite/run_tests.js
+
+      - name: Install browser test dependencies
+        run: npm install
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Run browser smoke tests
+        run: npm run test:browser
+
+  deploy:
+    needs: test
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - name: Prepare site artifact
+        run: |
+          mkdir -p site
+          cp index.html app.js style.css quiz_player.html generator.js quiz-core.js quiz-export.js site/
+          if [ -f manifest.webmanifest ]; then
+            cp manifest.webmanifest site/manifest.webmanifest
+          fi
+          if [ -f sw.js ]; then
+            cp sw.js site/sw.js
+          fi
+          if [ -d icons ]; then
+            cp -R icons site/icons
+          fi
+          if [ -d js ]; then
+            cp -R js site/js
+          fi
+          if [ -d vendor ]; then
+            cp -R vendor site/vendor
+          fi
+          if [ -d test-suite ]; then
+            cp -R test-suite site/test-suite
+          fi
+          if [ -f favicon.svg ]; then
+            cp favicon.svg site/favicon.svg
+          fi
+          if [ -f questions.json ]; then
+            cp questions.json site/questions.json
+          fi
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,1664 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description"
+        content="מחולל מבחנים בעברית – העלה קובץ PDF סרוק, חלץ שאלות באמצעות Gemini OCR, וצור מבחן אינטראקטיבי להורדה.">
+    <title>יוצר מבחן אינטראקטיבי</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="manifest" href="manifest.webmanifest">
+    <meta name="theme-color" content="#2563eb">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="יוצר מבחנים">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;700&display=swap" rel="stylesheet">
+    <script type="module">
+        try {
+            const pdfjsLib = await import('./vendor/pdfjs/pdf.min.mjs');
+            pdfjsLib.GlobalWorkerOptions.workerSrc = './vendor/pdfjs/pdf.worker.min.mjs';
+            window.pdfjsLib = pdfjsLib;
+        } catch (e) {
+            console.warn('Local ES module PDF.js load deferred/failed. Enabling fallback loader...', e);
+        }
+    </script>
+    <script>
+        if (!window.pdfjsLib) {
+            document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"><\/script>');
+        }
+    </script>
+    <script>
+        if (!window.pdfjsLib && window['pdfjs-dist/build/pdf']) {
+            window.pdfjsLib = window['pdfjs-dist/build/pdf'];
+            window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        }
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+    <style>
+        body {
+            min-height: 100vh;
+        }
+
+        .builder-container {
+            max-width: 1320px;
+            margin: 0 auto;
+            padding: 24px 16px 48px;
+        }
+
+        .builder-layout {
+            display: grid;
+            grid-template-columns: 290px 1fr;
+            gap: 16px;
+            align-items: start;
+        }
+
+        .builder-layout.no-sidebar {
+            grid-template-columns: 1fr;
+        }
+
+        .builder-main-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 16px;
+        }
+
+        .builder-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 16px;
+        }
+
+        .sidebar-card {
+            position: sticky;
+            top: 16px;
+            max-height: calc(100vh - 32px);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .sidebar-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 4px;
+        }
+
+        .preset-buttons {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 6px;
+            margin-bottom: 8px;
+        }
+
+        .sm-btn {
+            padding: 6px 10px;
+            font-size: .78rem;
+            border-radius: 8px;
+            white-space: nowrap;
+            text-align: center;
+            cursor: pointer;
+        }
+
+        .thumbnails-grid {
+            overflow-y: auto;
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+            gap: 10px;
+            padding-right: 4px;
+            max-height: 520px;
+        }
+
+        .thumbnail-item {
+            border: 1.5px solid var(--border-color);
+            border-radius: 10px;
+            padding: 6px;
+            background: var(--input-bg);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            cursor: pointer;
+            transition: border-color .15s, background .15s, opacity .15s;
+            position: relative;
+        }
+
+        .thumbnail-item.disabled-page {
+            opacity: .42;
+            background: rgba(148, 163, 184, .12);
+            border-style: dashed;
+        }
+
+        .thumbnail-item:hover {
+            border-color: var(--primary-color);
+        }
+
+        .thumbnail-item canvas,
+        .thumbnail-item img {
+            width: 100%;
+            height: auto;
+            border-radius: 6px;
+            border: 1px solid rgba(0, 0, 0, .08);
+            transition: opacity .2s ease;
+        }
+
+        .thumbnail-img.thumbnail-loaded {
+            animation: fadeInThumb .25s ease-out;
+        }
+
+        @keyframes fadeInThumb {
+            from { opacity: 0; transform: scale(0.96); }
+            to { opacity: 1; transform: scale(1); }
+        }
+
+        .thumbnail-placeholder {
+            width: 100%;
+            aspect-ratio: 0.707; /* Standard A4 paper ratio */
+            border-radius: 6px;
+            background: rgba(148, 163, 184, 0.12);
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px dashed var(--border-color);
+        }
+
+        .thumbnail-skeleton {
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.18) 50%, transparent 100%);
+            animation: shimmerThumb 1.5s infinite;
+        }
+
+        @keyframes shimmerThumb {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
+
+        .thumbnail-loading-text {
+            font-size: 0.72rem;
+            color: var(--text-secondary);
+            font-weight: 500;
+            z-index: 1;
+        }
+
+        .thumbnail-label {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            font-size: .78rem;
+            font-weight: 500;
+            margin-top: 4px;
+            width: 100%;
+            justify-content: center;
+        }
+
+        .thumbnail-label input[type="checkbox"] {
+            accent-color: var(--primary-color);
+            cursor: pointer;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: .75rem;
+            font-weight: 600;
+            background: rgba(59, 130, 246, .12);
+            color: var(--primary-color);
+        }
+
+        .help-btn {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            border: 1px solid var(--border-color);
+            background: rgba(59, 130, 246, 0.1);
+            color: var(--primary-color);
+            font-size: 0.72rem;
+            font-weight: 700;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+            transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+            vertical-align: middle;
+            margin-right: 4px;
+        }
+
+        .help-btn:hover {
+            transform: scale(1.18);
+            background: var(--primary-color);
+            color: white;
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.35);
+        }
+
+        .sidebar-card.is-collapsed #sidebar-collapsible-body {
+            display: none;
+        }
+
+        .toast-container {
+            position: fixed;
+            bottom: 24px;
+            left: 24px;
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            pointer-events: none;
+        }
+
+        .toast {
+            background: var(--card-bg, #ffffff);
+            color: var(--text-primary, #1e293b);
+            border: 1px solid var(--border-color, #cbd5e1);
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.18);
+            border-radius: 10px;
+            padding: 12px 18px;
+            font-size: 0.88rem;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            pointer-events: auto;
+            animation: toastIn 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+            direction: rtl;
+        }
+
+        .toast.success {
+            border-right: 4px solid #10b981;
+        }
+
+        .toast.error {
+            border-right: 4px solid #ef4444;
+        }
+
+        .toast.info {
+            border-right: 4px solid #3b82f6;
+        }
+
+        @keyframes toastIn {
+            from {
+                transform: translateY(20px);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        @media (max-width: 900px) {
+            .builder-layout {
+                grid-template-columns: 1fr;
+            }
+
+            .sidebar-card {
+                position: static;
+                max-height: none;
+            }
+
+            .preset-buttons {
+                grid-template-columns: 1fr 1fr;
+                gap: 8px;
+            }
+        }
+
+        .builder-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 16px;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .builder-card h2 {
+            margin: 0 0 10px;
+            font-size: 1.1rem;
+        }
+
+        .field {
+            display: grid;
+            gap: 6px;
+            margin-bottom: 12px;
+        }
+
+        .field-note-inline {
+            font-weight: 400;
+            font-size: .78rem;
+            color: var(--text-secondary);
+        }
+
+        .field-note-block {
+            margin-top: 6px;
+            font-size: .82rem;
+            line-height: 1.45;
+            color: var(--text-secondary);
+            border-radius: 8px;
+            padding: 8px 10px;
+            border: 1px solid transparent;
+            background: rgba(148, 163, 184, .08);
+        }
+
+        .field-note-block.hidden {
+            display: none;
+        }
+
+        .field-note-block.is-loading {
+            color: var(--primary-color);
+            background: rgba(59, 130, 246, .08);
+            border-color: rgba(59, 130, 246, .18);
+        }
+
+        .field-note-block.is-digital {
+            color: #047857;
+            background: rgba(16, 185, 129, .10);
+            border-color: rgba(16, 185, 129, .22);
+        }
+
+        .field-note-block.is-scanned {
+            color: #b45309;
+            background: rgba(245, 158, 11, .10);
+            border-color: rgba(245, 158, 11, .24);
+        }
+
+        .field-note-block.is-error {
+            color: var(--danger);
+            background: rgba(239, 68, 68, .08);
+            border-color: rgba(239, 68, 68, .20);
+        }
+
+        .warning-note {
+            color: var(--danger);
+            font-size: .82rem;
+            line-height: 1.45;
+        }
+
+        .info-banner {
+            display: flex;
+            gap: 8px;
+            align-items: flex-start;
+            background: rgba(59, 130, 246, .07);
+            border: 1px solid rgba(59, 130, 246, .22);
+            border-radius: 10px;
+            padding: 10px 12px;
+            font-size: .84rem;
+            line-height: 1.55;
+            color: var(--text-primary);
+            margin-bottom: 14px;
+        }
+
+        .section-divider {
+            border: none;
+            border-top: 1px solid var(--border-color);
+            margin: 14px 0 8px;
+        }
+
+        .section-label {
+            font-size: .73rem;
+            font-weight: 700;
+            letter-spacing: .05em;
+            text-transform: uppercase;
+            color: var(--text-secondary);
+            margin: 0 0 10px;
+        }
+
+        .auth-section {
+            background: rgba(59, 130, 246, .04);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 12px 14px;
+            margin-bottom: 4px;
+        }
+
+        .auth-section .field:last-child {
+            margin-bottom: 0;
+        }
+
+        .offline-warning-box {
+            display: none;
+            background: rgba(239, 68, 68, .07);
+            border: 1px solid rgba(239, 68, 68, .22);
+            border-radius: 8px;
+            padding: 8px 10px;
+            font-size: .82rem;
+            line-height: 1.45;
+            color: var(--danger);
+            margin-top: 6px;
+        }
+
+        .offline-warning-box.show {
+            display: block;
+        }
+
+        .proof-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 12px;
+            flex-wrap: wrap;
+        }
+
+        .proof-label {
+            font-size: .87rem;
+            font-weight: 500;
+        }
+
+        .proof-note {
+            font-size: .81rem;
+            color: var(--text-secondary);
+            flex: 1;
+        }
+
+        .field input,
+        .field textarea,
+        .field select {
+            background: var(--input-bg);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 10px;
+            font: inherit;
+            width: 100%;
+        }
+
+        #proof-mode-toggle {
+            width: auto;
+            padding: 0;
+            border: none;
+            background: transparent;
+            accent-color: var(--primary-color);
+            flex-shrink: 0;
+        }
+
+        .actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 8px;
+        }
+
+        .status {
+            margin-top: 8px;
+            padding: 10px;
+            border-radius: 10px;
+            background: var(--input-bg);
+            border: 1px solid var(--border-color);
+            white-space: pre-wrap;
+        }
+
+        .preview-list {
+            display: grid;
+            gap: 12px;
+        }
+
+        .validation-summary {
+            margin: 0 0 12px;
+            padding: 10px 12px;
+            border: 1px solid rgba(239, 68, 68, .28);
+            border-right: 4px solid var(--danger);
+            border-radius: 10px;
+            background: rgba(239, 68, 68, .08);
+            color: var(--danger);
+            font-size: .86rem;
+            line-height: 1.5;
+        }
+
+        .validation-summary.hidden {
+            display: none;
+        }
+
+        .question-card.is-invalid {
+            border-color: var(--danger);
+            box-shadow: 0 0 0 2px rgba(239, 68, 68, .12);
+        }
+
+        .question-validation-error {
+            color: var(--danger);
+            font-size: .82rem;
+            line-height: 1.4;
+            padding: 6px 8px;
+            border-radius: 7px;
+            background: rgba(239, 68, 68, .08);
+        }
+
+        .question-card {
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 12px;
+            background: var(--input-bg);
+            display: grid;
+            gap: 8px;
+        }
+
+        .question-card .row {
+            display: grid;
+            grid-template-columns: 92px 1fr;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .question-card .row label {
+            font-weight: 500;
+            font-size: .9rem;
+        }
+
+        .question-card .option-row {
+            display: grid;
+            grid-template-columns: 24px 1fr 26px;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .question-card textarea {
+            min-height: 48px;
+            resize: vertical;
+        }
+
+        .muted {
+            opacity: .85;
+            font-size: .92rem;
+        }
+
+        .help-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            border: 1.5px solid var(--border-color);
+            background: var(--input-bg);
+            color: var(--text-secondary);
+            font-size: .75rem;
+            font-weight: 700;
+            cursor: pointer;
+            vertical-align: middle;
+            line-height: 1;
+            padding: 0;
+            transition: background .15s, color .15s, border-color .15s;
+        }
+
+        .help-btn:hover {
+            background: var(--primary-color);
+            color: #fff;
+            border-color: var(--primary-color);
+        }
+
+        .password-wrap {
+            position: relative;
+            display: flex;
+            align-items: center;
+        }
+
+        .password-wrap input {
+            padding-left: 40px;
+        }
+
+        .eye-btn {
+            position: absolute;
+            left: 8px;
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 1.1rem;
+            padding: 4px;
+            line-height: 1;
+            opacity: .55;
+            transition: opacity .15s;
+        }
+
+        .eye-btn:hover {
+            opacity: 1;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .file-wrap {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .file-wrap input[type="file"] {
+            flex: 1;
+        }
+
+        .file-clear {
+            white-space: nowrap;
+            padding: 6px 12px;
+            border-radius: 8px;
+            border: 1px solid var(--danger);
+            background: transparent;
+            color: var(--danger);
+            cursor: pointer;
+            font: inherit;
+            font-size: .82rem;
+        }
+
+        .file-clear:hover {
+            background: var(--danger);
+            color: #fff;
+        }
+
+        .help-popup {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, .65);
+            backdrop-filter: blur(4px);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .help-popup.show {
+            display: flex;
+        }
+
+        .help-popup-content {
+            background: var(--card-bg, #fff);
+            border: 2px solid var(--primary-color);
+            border-radius: 16px;
+            padding: 28px;
+            max-width: 460px;
+            width: 90%;
+            box-shadow: 0 8px 40px rgba(0, 0, 0, .35);
+            direction: rtl;
+            text-align: right;
+        }
+
+        .help-popup-content h3 {
+            margin: 0 0 12px;
+        }
+
+        .help-popup-content p {
+            margin: 8px 0;
+            font-size: .92rem;
+            line-height: 1.6;
+        }
+
+        .help-popup-content code {
+            background: var(--input-bg);
+            padding: 2px 6px;
+            border-radius: 5px;
+            font-size: .85rem;
+            direction: ltr;
+            display: inline-block;
+        }
+
+        .help-popup-content .key-type {
+            font-weight: 600;
+            color: var(--primary-color);
+        }
+
+        .help-popup-close {
+            margin-top: 16px;
+            padding: 8px 20px;
+            border-radius: 10px;
+            border: 1px solid var(--border-color);
+            background: var(--input-bg);
+            color: var(--text-primary);
+            cursor: pointer;
+            font: inherit;
+            font-size: .9rem;
+        }
+
+        @media (max-width: 640px) {
+            .question-card .row {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        #download-quiz:disabled,
+        #take-quiz:disabled,
+        .success-btn:disabled,
+        .secondary-btn:disabled,
+        button:disabled {
+            background-color: #cbd5e1 !important;
+            background: #cbd5e1 !important;
+            color: #64748b !important;
+            border-color: #cbd5e1 !important;
+            opacity: 0.55 !important;
+            cursor: not-allowed !important;
+            box-shadow: none !important;
+            transform: none !important;
+            filter: grayscale(100%) !important;
+        }
+
+        [data-theme="dark"] #download-quiz:disabled,
+        [data-theme="dark"] #take-quiz:disabled,
+        [data-theme="dark"] .success-btn:disabled,
+        [data-theme="dark"] .secondary-btn:disabled,
+        [data-theme="dark"] button:disabled {
+            background-color: #334155 !important;
+            background: #334155 !important;
+            color: #64748b !important;
+            border-color: #475569 !important;
+        }
+
+        .nav-toggle-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            border-radius: 20px;
+            background: var(--input-bg);
+            border: 1px solid var(--border-color);
+            font-size: 0.78rem;
+            font-weight: 500;
+            color: var(--text-primary);
+            cursor: pointer;
+            white-space: nowrap;
+            user-select: none;
+            transition: all 0.2s ease;
+        }
+
+        .nav-toggle-pill:hover:not(.disabled):not(:has(input:disabled)) {
+            border-color: var(--primary-color);
+            background: var(--card-bg);
+        }
+
+        .nav-toggle-pill:has(input:disabled),
+        .nav-toggle-pill.disabled {
+            opacity: 0.55 !important;
+            cursor: not-allowed !important;
+            background: #cbd5e1 !important;
+            color: #64748b !important;
+            border-color: #cbd5e1 !important;
+            filter: grayscale(100%) !important;
+        }
+
+        [data-theme="dark"] .nav-toggle-pill:has(input:disabled),
+        [data-theme="dark"] .nav-toggle-pill.disabled {
+            background: #334155 !important;
+            color: #64748b !important;
+            border-color: #475569 !important;
+        }
+
+        .nav-toggle-pill input[type="checkbox"] {
+            accent-color: var(--primary-color);
+            cursor: pointer;
+            width: 14px;
+            height: 14px;
+            margin: 0;
+        }
+
+        .nav-toggle-pill input[type="checkbox"]:disabled {
+            cursor: not-allowed !important;
+        }
+
+        .freebuff-action-group {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .freebuff-btn {
+            background: linear-gradient(135deg, #7c3aed, #2563eb);
+            color: #fff;
+            border: 0;
+            font-weight: 700;
+        }
+
+        .freebuff-btn:hover:not(:disabled) {
+            filter: brightness(1.08);
+            transform: translateY(-1px);
+        }
+
+        .freebuff-info-btn {
+            width: 20px;
+            height: 20px;
+            padding: 0;
+            border: 1px solid var(--border-color);
+            border-radius: 50%;
+            background: var(--input-bg);
+            color: var(--text-secondary);
+            cursor: pointer;
+            font: inherit;
+            font-size: .75rem;
+            font-weight: 700;
+            line-height: 1;
+        }
+
+        .freebuff-info-btn:hover,
+        .freebuff-info-btn:focus-visible {
+            background: var(--primary-color);
+            border-color: var(--primary-color);
+            color: #fff;
+        }
+
+        .freebuff-tooltip {
+            position: absolute;
+            z-index: 20;
+            right: 0;
+            bottom: calc(100% + 8px);
+            width: min(300px, 80vw);
+            padding: 8px 10px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            background: var(--card-bg);
+            color: var(--text-primary);
+            box-shadow: var(--shadow-md);
+            font-size: .78rem;
+            line-height: 1.45;
+            text-align: right;
+            opacity: 0;
+            pointer-events: none;
+            transform: translateY(4px);
+            transition: opacity .15s ease, transform .15s ease;
+        }
+
+        .freebuff-info-btn:hover + .freebuff-tooltip,
+        .freebuff-info-btn:focus-visible + .freebuff-tooltip,
+        .freebuff-tooltip.is-open {
+            opacity: 1;
+            pointer-events: auto;
+            transform: translateY(0);
+        }
+
+        @media (max-width: 640px) {
+            .freebuff-tooltip {
+                right: auto;
+                left: 0;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div id="sticky-progress-banner" class="sticky-progress-banner hidden" role="status" aria-live="polite">
+        <div class="sticky-progress-content">
+            <div class="sticky-progress-info">
+                <span class="progress-spinner-icon">⏳</span>
+                <span id="sticky-progress-title" class="sticky-progress-title">מעבד...</span>
+                <span id="sticky-progress-detail" class="sticky-progress-detail"></span>
+            </div>
+            <div class="sticky-progress-actions">
+                <span id="sticky-progress-percent" class="sticky-progress-percent">0%</span>
+                <button id="sticky-progress-abort-btn" type="button" class="progress-abort-btn" title="בטל פעולה">✕ ביטול</button>
+            </div>
+        </div>
+        <div class="progress-bar-track">
+            <div id="sticky-progress-fill" class="progress-bar-fill" style="width: 0%;"></div>
+        </div>
+    </div>
+
+    <header class="navbar">
+        <div class="logo">יוצר מבחן אינטראקטיבי</div>
+        <div class="navbar-center">
+            <button id="full-guide-btn" type="button" class="guide-welcome-btn"
+                title="לחץ לצפייה במדריך המהיר צעד אחר צעד">
+                ✨ 📖 איך זה עובד? מדריך מהיר
+            </button>
+        </div>
+        <div class="controls">
+            <button id="pwa-install-btn" class="secondary-btn sm-btn" type="button" title="התקן כאפליקציה לטלפון או למחשב" style="display: none; align-items: center; gap: 4px;">📲 התקן אפליקציה</button>
+            <button id="download-quiz" class="success-btn sm-btn" disabled title="הורד מבחן עצמאי (HTML)">📥 הורד מבחן עצמאי (HTML)</button>
+            <button id="take-quiz" class="secondary-btn sm-btn" disabled title="פתור מבחן כעת בלשונית חדשה">▶ פתור מבחן כעת</button>
+            <button id="theme-toggle" class="icon-btn" aria-label="Toggle theme">
+                <svg id="theme-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"
+                    fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                    stroke-linejoin="round"></svg>
+            </button>
+        </div>
+    </header>
+
+    <main class="builder-container">
+        <div id="builder-layout" class="builder-layout no-sidebar">
+            <!-- Sidebar Card for PDF Pages & Filtering -->
+            <aside id="pdf-sidebar-card" class="builder-card sidebar-card hidden">
+                <div class="sidebar-header"
+                    style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                        <h2>📑 עמודי PDF</h2>
+                        <span id="page-count-badge" class="badge">0 עמודים</span>
+                        <button id="clean-pdf-help-btn" class="help-btn" type="button" title="מה עושה ניקוי ה-PDF?"
+                            onclick="document.getElementById('clean-pdf-help-popup').classList.add('show')">?</button>
+                    </div>
+                    <button id="toggle-sidebar-collapse-btn" type="button" class="sm-btn secondary-btn"
+                        title="קיפול / הרחבת סרגל העמודים" style="font-size: .75rem; padding: 3px 8px;">◀ קפל
+                        סרגל</button>
+                </div>
+
+                <div id="sidebar-collapsible-body">
+                    <p class="muted" style="font-size: .78rem; margin: 4px 0 10px; line-height: 1.4;">
+                        💡 <strong>מומלץ:</strong> סמן עמודים והורד PDF נקי ללא עמודי שער/הוראות לדיוק מקסימלי ב-LLM.
+                    </p>
+
+                    <div class="preset-buttons">
+                        <button id="preset-std-btn" type="button" class="sm-btn secondary-btn"
+                            title="מבטל עמודי שער/הוראות 1-4 ועמודים זוגיים">🧹 ניקוי סטנדרטי</button>
+                        <button id="preset-even-odd-btn" type="button" class="sm-btn secondary-btn"
+                            title="בלחיצה ראשונה מסמן עמודים זוגיים, בלחיצה שנייה מסמן עמודים אי-זוגיים">📄 עמודים
+                            זוגיים</button>
+                        <button id="preset-select-all-btn" type="button" class="sm-btn secondary-btn">☑️ בחר
+                            הכל</button>
+                        <button id="preset-deselect-all-btn" type="button" class="sm-btn secondary-btn">☐ בטל
+                            הכל</button>
+                    </div>
+
+                    <button id="download-clean-pdf" type="button" class="success-btn sm-btn"
+                        style="width:100%; margin: 8px 0 6px;" disabled>📥 הורד PDF נקי</button>
+
+                    <label
+                        style="display: flex; align-items: center; gap: 6px; font-size: .78rem; margin: 0 0 10px; cursor: pointer; color: var(--text-primary);"
+                        title="כאשר מסומן, ניתוח ה-API והפענוח האוטומטי ישלחו רק את העמודים שנבחרו בסרגל זה">
+                        <input type="checkbox" id="use-clean-pdf-for-api" checked
+                            style="accent-color: var(--primary-color);">
+                        <span>⚡ השתמש בעמודים המסומנים בלבד בניתוח Gemini</span>
+                    </label>
+
+                    <div id="page-thumbnails-container" class="thumbnails-grid">
+                        <!-- Page thumbnails dynamically injected here -->
+                    </div>
+                </div>
+            </aside>
+
+            <!-- Main Grid for Source Files & Preview -->
+            <div class="builder-main-grid">
+                <section class="builder-card">
+                    <h2>קבצי מקור</h2>
+
+                    <div class="field">
+                        <label for="pdf-file">קובץ PDF</label>
+                        <div class="file-wrap">
+                            <input id="pdf-file" type="file" accept="application/pdf,.pdf,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
+                            <button class="file-clear hidden" data-target="pdf-file" type="button" title="הסר קובץ">✕
+                                הסר</button>
+                        </div>
+                        <div class="field-note-inline" style="margin-top:6px; display:block;">DOCX נתמך כקלט: יש להמיר ל-PDF לפני עיבוד.</div>
+                        <div id="pdf-type-note" class="field-note-block hidden"></div>
+                        <div id="digital-actions-box" class="field-note-block is-digital hidden" style="margin-top: 8px; background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); padding: 12px; border-radius: 8px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;">
+                                <div>
+                                    <strong style="color: #047857; font-size: .88rem;">📄 זוהה PDF דיגיטלי!</strong>
+                                    <span style="display: block; font-size: .82rem; color: var(--text-secondary); margin-top: 2px;">ניתן לחלץ את השאלות מקומית בלחיצת כפתור, או להעתיק את הפרומפט המומלץ ל-ChatGPT/Claude/Gemini:</span>
+                                </div>
+                                <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                                    <button id="run-digital-local-btn" type="button" class="success-btn sm-btn" style="white-space: nowrap; font-weight: 700; padding: 8px 14px; font-size: .83rem;">⚡ חלץ שאלות מקומית כעת</button>
+                                    <div class="freebuff-action-group">
+                                        <button id="freebuff-digital-btn" type="button" class="freebuff-btn sm-btn" title="פתח את Freebuff Chat בלשונית חדשה">✨ Freebuff</button>
+                                        <button id="freebuff-digital-info" type="button" class="freebuff-info-btn" aria-label="מידע על Freebuff" aria-describedby="freebuff-digital-tooltip">i</button>
+                                        <span id="freebuff-digital-tooltip" class="freebuff-tooltip" role="tooltip">Freebuff עוזר להמשיך ולשפר את זרימת העבודה עם AI. הלחיצה תפתח את Freebuff Chat בלשונית חדשה.</span>
+                                    </div>
+                                    <button id="copy-digital-prompt-btn" type="button" class="secondary-btn sm-btn" style="white-space: nowrap; font-weight: 700; padding: 8px 12px; font-size: .83rem;">📋 העתק פרומפט ל-AI</button>
+                                </div>
+                            </div>
+                            <div id="digital-prompt-expandable" style="margin-top: 10px; border-top: 1px dashed rgba(16, 185, 129, 0.3); padding-top: 8px;">
+                                <textarea id="digital-llm-prompt-box" readonly rows="5" style="font-family: monospace; font-size: .8rem; width: 100%; resize: vertical; direction: rtl; background: var(--input-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 8px;"></textarea>
+                            </div>
+                        </div>
+
+                        <div id="scanned-actions-box" class="field-note-block is-scanned hidden" style="margin-top: 8px; background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.3); padding: 12px; border-radius: 8px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; gap: 8px; flex-wrap: wrap;">
+                                <div>
+                                    <strong style="color: #b45309; font-size: .88rem;">📷 זוהה PDF סרוק (תמונה)!</strong>
+                                    <span style="display: block; font-size: .82rem; color: var(--text-secondary); margin-top: 2px;">העתק את הפרומפט והעלה אותו עם ה-PDF (או ה-PDF הנקי מהסרגל) ל-ChatGPT / Claude / Gemini:</span>
+                                </div>
+                                <div style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center;">
+                                    <div class="freebuff-action-group">
+                                        <button id="freebuff-scanned-btn" type="button" class="freebuff-btn sm-btn" title="פתח את Freebuff Chat בלשונית חדשה">✨ Freebuff</button>
+                                        <button id="freebuff-scanned-info" type="button" class="freebuff-info-btn" aria-label="מידע על Freebuff" aria-describedby="freebuff-scanned-tooltip">i</button>
+                                        <span id="freebuff-scanned-tooltip" class="freebuff-tooltip" role="tooltip">Freebuff עוזר להמשיך ולשפר את זרימת העבודה עם AI. הלחיצה תפתח את Freebuff Chat בלשונית חדשה.</span>
+                                    </div>
+                                    <button id="copy-prompt-btn" type="button" class="primary-btn sm-btn" style="white-space: nowrap; font-weight: 700; padding: 8px 14px; font-size: .83rem; background: #d97706; border: none;">📋 העתק פרומפט ל-AI</button>
+                                </div>
+                            </div>
+                            <textarea id="llm-prompt-box" readonly rows="6" style="font-family: monospace; font-size: .8rem; width: 100%; resize: vertical; direction: rtl; background: var(--input-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 8px; margin-top: 6px;"></textarea>
+                        </div>
+                    </div>
+
+                    <div class="field">
+                        <label for="json-file">קובץ שאלות (JSON / Markdown .md) <span
+                                class="field-note-inline">אופציונלי / מ-LLM</span></label>
+                        <div class="file-wrap">
+                            <input id="json-file" type="file"
+                                accept=".json,.md,.txt,text/markdown,text/plain,application/json">
+                            <button class="file-clear hidden" data-target="json-file" type="button" title="הסר קובץ">✕
+                                הסר</button>
+                        </div>
+                    </div>
+
+                    <div class="field">
+                        <label for="csv-file">קובץ תשובות <button id="answer-help-btn" class="help-btn" type="button"
+                                title="מה קורה בלי קובץ תשובות?">?</button> <span class="field-note-inline">CSV / XLS —
+                                אופציונלי</span></label>
+                        <div class="file-wrap">
+                            <input id="csv-file" type="file"
+                                accept=".csv,.xls,.xlsx,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+                            <button class="file-clear hidden" data-target="csv-file" type="button" title="הסר קובץ">✕
+                                הסר</button>
+                        </div>
+                    </div>
+
+                    <!-- Collapsible Dropdown: Manual Form Number Override -->
+                    <div class="advanced-dropdown-box" style="margin-top: 10px; margin-bottom: 10px; border: 1px dashed var(--border-color); border-radius: 10px; background: var(--card-bg); overflow: hidden;">
+                        <button id="toggle-manual-form-btn" type="button" class="advanced-toggle-btn"
+                            style="width: 100%; display: flex; justify-content: space-between; align-items: center; padding: 9px 12px; background: none; border: none; font-size: .83rem; font-weight: 600; color: var(--text-secondary); cursor: pointer; text-align: right; user-select: none;">
+                            <span style="display: flex; align-items: center; gap: 6px;">
+                                <span>🔢</span>
+                                <span>מספר שאלון / טופס ידני (מזוהה אוטומטית כברירת מחדל)</span>
+                                <span class="badge" style="font-size: .72rem; padding: 2px 6px; font-weight: 500;">אופציונלי</span>
+                            </span>
+                            <span id="manual-form-arrow" style="transition: transform 0.2s ease; font-size: .78rem; color: var(--text-secondary);">▼</span>
+                        </button>
+
+                        <div id="manual-form-container" class="hidden" style="padding: 10px 12px 12px; border-top: 1px dashed var(--border-color); background: var(--input-bg);">
+                            <div class="field" style="margin: 0;">
+                                <label for="form-number" style="font-size: .82rem;">מספר שאלון / טופס (למשל 63 או 0):</label>
+                                <input id="form-number" type="text" inputmode="numeric" placeholder="לדוגמה: 63">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="margin-top: 8px; margin-bottom: 8px;">
+                        <button id="merge-answers-btn" type="button" class="primary-btn"
+                            style="width: 100%; padding: 11px 18px; font-weight: 700; font-size: .92rem; background: linear-gradient(135deg, #2563eb, #1d4ed8); border: none; box-shadow: 0 4px 14px rgba(37,99,235,0.25); border-radius: 10px; color: #ffffff; cursor: pointer; transition: all 0.2s ease;">🔗 מזג תשובות נכונות לשאלות (Merge Official Answers)</button>
+                    </div>
+
+                    <div style="margin-top: 12px; text-align: center;">
+                        <button id="toggle-processing-settings-btn" type="button"
+                            style="background: none; border: none; color: var(--text-secondary); opacity: 0.65; font-size: .78rem; cursor: pointer; padding: 4px 8px; text-decoration: underline;">
+                            ⚙️ הגדרות עיבוד מתקדמות (Gemini API)
+                        </button>
+                    </div>
+
+                    <!-- Hidden Processing & API Settings Section -->
+                    <div id="processing-settings-container" class="hidden" style="margin-top: 10px;">
+                        <hr class="section-divider">
+                        <p class="section-label">⚙️&nbsp; הגדרות עיבוד מתקדמות (Gemini API)</p>
+
+                        <!-- Card 1: Policy & Engine -->
+                        <div
+                            style="background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 10px; padding: 12px; margin-bottom: 10px;">
+                            <p style="font-weight: 600; font-size: .85rem; margin-bottom: 8px;">1. מנוע ומדיניות LLM</p>
+                            <div class="field">
+                                <label for="llm-policy">שימוש ב-LLM</label>
+                                <select id="llm-policy">
+                                    <option value="auto">אוטומטי — מקומי לדיגיטלי, LLM לסרוק</option>
+                                    <option value="force_llm">LLM תמיד (Gemini)</option>
+                                    <option value="force_no_llm">ללא LLM — מקומי בלבד</option>
+                                </select>
+                            </div>
+                            <div class="field">
+                                <label for="ocr-engine">מנוע OCR <span class="field-note-inline">לסרוקים</span></label>
+                                <select id="ocr-engine">
+                                    <option value="gemini_native_markdown">Gemini — Native PDF + Clean Markdown (1 קריאה
+                                        — מהיר וקל, מומלץ)</option>
+                                    <option value="gemini_native_schema">Gemini — Native PDF + Enforced JSON Schema (1
+                                        קריאה — מובנה)</option>
+                                    <option value="gemini_chunked">Gemini — פיצול עמודי תמונה (Chunking)</option>
+                                    <option value="offline_local">OCR מקומי חינמי — ללא API Key</option>
+                                </select>
+                                <div class="offline-warning-box">
+                                    ⚠️&nbsp; OCR חינמי זה מתבצע בדפדפן, אך דורש חיבור לאינטרנט חד-פעמי להורדת מודל השפה.
+                                    בעברית הדיוק נמוך בהרבה מ-Gemini.
+                                </div>
+                            </div>
+                            <div class="verification-toggle-box"
+                                style="margin-top: 12px; background: var(--input-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 10px 12px; transition: all 0.2s ease;">
+                                <label
+                                    style="display: flex; align-items: center; justify-content: space-between; gap: 8px; cursor: pointer; user-select: none;">
+                                    <div style="display: flex; align-items: center; gap: 8px;">
+                                        <input type="checkbox" id="enable-llm-verification"
+                                            style="width: 16px; height: 16px; accent-color: var(--primary-color); cursor: pointer;">
+                                        <span
+                                            style="font-size: .83rem; font-weight: 600; color: var(--text-primary);">🔍
+                                            הגהת AI משנית (Verification Pass)</span>
+                                    </div>
+                                    <span id="verification-badge"
+                                        style="font-size: .74rem; font-weight: 600; padding: 2px 8px; border-radius: 12px; background: rgba(16, 185, 129, 0.12); color: #059669; border: 1px solid rgba(16, 185, 129, 0.3);">⚡
+                                        קריאה 1 (מהיר)</span>
+                                </label>
+                                <div id="verification-warning-box" class="field-note-block hidden"
+                                    style="margin-top: 8px; font-size: .78rem; color: #b45309; background: rgba(217, 119, 6, 0.1); border: 1px solid rgba(217, 119, 6, 0.25); padding: 8px 10px; border-radius: 6px; line-height: 1.4;">
+                                    ⚠️ <strong>שימו לב:</strong> הפעלת הגהה נוספת תבצע קריאת API משנית מול Gemini לבדיקת
+                                    ניתוח הטקסטים והתשובות. העיבוד ייקח מעט יותר זמן.
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Card 2: API Credentials -->
+                        <div id="llm-auth-section" class="auth-section"
+                            style="background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 10px; padding: 12px; margin-bottom: 10px;">
+                            <p style="font-weight: 600; font-size: .85rem; margin-bottom: 8px;">2. 🔑&nbsp; אימות
+                                Gemini API</p>
+                            <div class="field">
+                                <label for="api-key">API Key <span dir="ltr"
+                                        style="font-size: .8rem; opacity: .8;">(AQ...)</span> <button id="api-help-btn"
+                                        class="help-btn" type="button" title="איך משיגים API Key?">?</button></label>
+                                <div class="password-wrap">
+                                    <input id="api-key" type="password" placeholder="AQ...">
+                                    <button class="eye-btn" type="button" data-target="api-key"
+                                        aria-label="הצג/הסתר מפתח" title="הצג/הסתר">👁️</button>
+                                </div>
+                            </div>
+                            <div class="field">
+                                <label for="passcode">Passcode <span class="field-note-inline">למפתח מוצפן —
+                                        אופציונלי</span></label>
+                                <div class="password-wrap">
+                                    <input id="passcode" type="password" autocomplete="off" placeholder="קוד גישה סודי">
+                                    <button class="eye-btn" type="button" data-target="passcode"
+                                        aria-label="הצג/הסתר קוד" title="הצג/הסתר">👁️</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div style="margin-top: 14px;">
+                            <button id="run-parse" class="primary-btn" style="width: 100%;">⚡ הפעל ניתוח אוטומטי מול
+                                Gemini API</button>
+                        </div>
+                    </div>
+
+                    <hr class="section-divider">
+
+                    <div class="field">
+                        <label for="html-file">מבחן קיים לעריכה <span class="field-note-inline">אופציונלי</span></label>
+                        <div class="file-wrap">
+                            <input id="html-file" type="file" accept=".html,text/html">
+                            <button class="file-clear hidden" data-target="html-file" type="button" title="הסר קובץ">✕
+                                הסר</button>
+                        </div>
+                    </div>
+
+                    <div class="proof-row">
+                        <label for="proof-mode-toggle" class="proof-label">מצב הגהה</label>
+                        <span class="proof-note">הצגת עמוד מקור לכל שאלה</span>
+                        <input id="proof-mode-toggle" type="checkbox" checked>
+                    </div>
+
+                    <div id="progress-card" class="progress-card hidden" role="region" aria-label="התקדמות פעולת רקע">
+                        <div class="progress-header">
+                            <div class="progress-title-wrap">
+                                <span id="progress-icon" class="progress-icon">⚡</span>
+                                <div>
+                                    <div id="progress-title" class="progress-title">מבצע פעולת רקע...</div>
+                                    <div id="progress-detail" class="progress-detail muted">אנא המתן...</div>
+                                </div>
+                            </div>
+                            <div class="progress-meta">
+                                <span id="progress-percent" class="progress-percent">0%</span>
+                                <button id="progress-abort-btn" type="button" class="progress-abort-btn" title="בטל פעולה">
+                                    ✕ ביטול
+                                </button>
+                            </div>
+                        </div>
+                        <div class="progress-bar-track" role="progressbar" id="main-progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                            <div id="progress-fill" class="progress-bar-fill" style="width: 0%;"></div>
+                        </div>
+                    </div>
+
+                    <div id="status" class="status muted">מוכן להתחלה. PDF דיגיטלי יעובד מקומית, ו-PDF סרוק יבקש OCR רק
+                        אם צריך.</div>
+                </section>
+
+                <section class="builder-card">
+                    <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px;">
+                        <div>
+                            <h2 style="margin: 0;">תצוגה מקדימה ועריכה</h2>
+                            <p class="muted" style="margin: 4px 0 0;">לאחר הפעלת הניתוח ניתן לערוך טקסט/תשובות לפני ייצוא.</p>
+                        </div>
+                        <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                            <button id="auto-attach-diagrams-btn" type="button" class="secondary-btn sm-btn"
+                                style="white-space: nowrap; font-weight: 700; padding: 6px 12px; font-size: .83rem; cursor: pointer;"
+                                title="סורק את השאלות ומחבר אוטומטית תמונות עמוד מתוך ה-PDF לשאלות הכוללות תרשימים, גרפים או טבלאות">🖼️ חבר עמודי תרשים/טבלה</button>
+                            <button id="strip-question-headers-btn-preview" type="button" class="secondary-btn sm-btn"
+                                style="white-space: nowrap; font-weight: 700; padding: 6px 12px; font-size: .83rem; cursor: pointer;"
+                                title="מנקה ומסיר כותרות כמו 'שאלה מספר :1' או '1.' מראש כל השאלות">✂️ הסר כותרות "שאלה מספר X"</button>
+                        </div>
+                    </div>                        <div id="validation-summary" class="validation-summary hidden" role="status" aria-live="polite"></div>
+                        <div id="preview" class="preview-list"></div>
+                </section>
+            </div>
+        </div>
+    </main>
+
+    <div id="api-help-popup" class="help-popup">
+        <div class="help-popup-content" style="max-width: 520px;">
+            <h3>🔑 איך משיגים AQ API Key?</h3>
+            <p style="font-size: .88rem; color: var(--text-secondary); margin-bottom: 12px;">
+                המערכת פועלת כעת בלעדית מול <strong>AQ API</strong> להפעלת מודלי Gemini מתקדמים:
+            </p>
+
+            <div
+                style="background: var(--input-bg); border: 1px solid var(--border-color); border-radius: 10px; padding: 12px; margin-bottom: 14px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                    <strong style="color: var(--primary-color); font-size: .95rem;">AQ API Key</strong>
+                    <span
+                        style="font-family: monospace; font-size: .85rem; background: var(--card-bg); padding: 2px 8px; border-radius: 6px; border: 1px solid var(--border-color);"
+                        dir="ltr">AQ...</span>
+                </div>
+                <p style="margin: 0; font-size: .85rem; color: var(--text-secondary); line-height: 1.5;">
+                    מפתח מומלץ למודלים מתקדמים (Gemini 2.5 Flash / 2.0 Flash).<br>
+                    מתקבל בחינם מ־
+                    <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer"
+                        style="font-weight: 600; text-decoration: underline;">Google AI Studio</a>.
+                </p>
+            </div>
+
+            <p style="font-size: .82rem; color: var(--text-secondary); margin-bottom: 16px; line-height: 1.4;">
+                💡 את המפתח מדביקים בשדה <bdi>API Key</bdi> — המערכת תשתמש בו לפענוח וניתוח המבחן.
+            </p>
+
+            <button id="api-help-close" class="help-popup-close" type="button" style="width: 100%;">הבנתי, תודה</button>
+        </div>
+    </div>
+
+    <div id="answer-help-popup" class="help-popup">
+        <div class="help-popup-content">
+            <h3>מה קורה בלי קובץ תשובות?</h3>
+            <p>אם לא מעלים קובץ תשובות, המערכת מניחה שמדובר בטופס 000 ולכן ברירת המחדל של כל התשובות הנכונות היא
+                <strong>א'</strong>.
+            </p>
+            <p>במבחן הסופי סדר התשובות יתערבב <strong>רק</strong> במבחנים כאלה, כדי לא להשאיר את כל התשובות במקום
+                הראשון.</p>
+            <button id="answer-help-close" class="help-popup-close">הבנתי</button>
+        </div>
+    </div>
+
+    <div id="credential-popup" class="help-popup">
+        <div class="help-popup-content">
+            <h3>נדרש אימות ל-AQ / Gemini API</h3>
+            <p>הקובץ דורש עיבוד עם LLM. אפשר להזין עכשיו API Key או Passcode למפתח המוצפן.</p>
+            <div class="field">
+                <label for="credential-api-key">AQ / Gemini API Key</label>
+                <input id="credential-api-key" type="password" placeholder="AQ...">
+            </div>
+            <div class="field">
+                <label for="credential-passcode">Passcode למפתח מוצפן</label>
+                <input id="credential-passcode" type="password" autocomplete="off" placeholder="קוד גישה">
+            </div>
+            <p id="credential-popup-note" class="warning-note">אפשר להשאיר אחד מהשדות ריק. אם מזינים Passcode, המערכת
+                תנסה לפענח ממנו מפתח Gemini.</p>
+            <div class="actions">
+                <button id="credential-submit" class="primary-btn" type="button">המשך</button>
+                <button id="credential-cancel" class="secondary-btn" type="button">ביטול</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="clean-pdf-help-popup" class="help-popup">
+        <div class="help-popup-content" style="max-width: 540px;">
+            <h3 style="color: var(--primary-color); margin-bottom: 12px;">📑 סרגל ניקוי עמודים וייצוא PDF נקי</h3>
+
+            <p style="margin-bottom: 12px; font-size: .88rem; line-height: 1.5;">
+                סרגל זה מאפשר לסנן ולנקות עמודים מיותרים מהמבחן (כמו דפי שער, הוראות כלליות או דפים ריקים) לפני היצוא
+                והשליחה ל-LLM.
+            </p>
+
+            <div style="display: grid; gap: 10px; margin-bottom: 14px;">
+                <div
+                    style="background: var(--input-bg); padding: 10px; border-radius: 8px; border: 1px solid var(--border-color); font-size: .84rem;">
+                    <strong style="color: var(--primary-color);">🧹 ניקוי סטנדרטי (ניקוי אוטומטי למבחנים):</strong>
+                    <span style="display: block; margin-top: 2px; color: var(--text-secondary);">מבטל אוטומטית עמודי שער
+                        והוראות (עמודים 1-4) ועמודים זוגיים (שבדרך כלל ריקים בטפסי מבחן).</span>
+                </div>
+
+                <div
+                    style="background: var(--input-bg); padding: 10px; border-radius: 8px; border: 1px solid var(--border-color); font-size: .84rem;">
+                    <strong style="color: var(--primary-color);">📄 עמודים זוגיים / אי-זוגיים:</strong>
+                    <span style="display: block; margin-top: 2px; color: var(--text-secondary);">בלחיצה ראשונה מסמן אך
+                        ורק עמודים זוגיים (2, 4, 6...), ובלחיצה שנייה מסמן אך ורק עמודים אי-זוגיים (1, 3, 5...).</span>
+                </div>
+
+                <div
+                    style="background: var(--input-bg); padding: 10px; border-radius: 8px; border: 1px solid var(--border-color); font-size: .84rem;">
+                    <strong style="color: var(--primary-color);">🎛️ כוונון ידני ורגישות:</strong>
+                    <span style="display: block; margin-top: 2px; color: var(--text-secondary);">תוכל ללחוץ ישירות על
+                        תיבת הסימון (☑️/☐) מתחת לכל תמונה ממוזערת כדי להכליל או להסיר עמוד ספציפי באופן ידני!</span>
+                </div>
+
+                <div
+                    style="background: rgba(16, 185, 129, 0.1); padding: 10px; border-radius: 8px; border: 1px solid rgba(16, 185, 129, 0.3); font-size: .84rem; color: #047857;">
+                    <strong>💡 📥 הורד PDF נקי (מומלץ בחום):</strong>
+                    <span style="display: block; margin-top: 2px;">מייצר קובץ PDF חדש ומזוקק המכיל <strong>רק את העמודים
+                            המסומנים</strong>. שימוש ב-PDF נקי מונע רעשי רקע ומבטיח דיוק מקסימלי
+                        ב-ChatGPT/Claude!</span>
+                </div>
+            </div>
+
+            <button id="clean-pdf-help-close" class="help-popup-close" type="button" style="width: 100%;">הבנתי,
+                תודה</button>
+        </div>
+    </div>
+
+    <div id="compress-settings-popup" class="help-popup">
+        <div class="help-popup-content" style="max-width: 460px;">
+            <h3 style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+                <span>📥 ייצוא והורדת מבחן עצמאי (HTML)</span>
+            </h3>
+            <p style="font-size: .88rem; color: var(--text-secondary); margin-bottom: 14px; line-height: 1.5;">
+                תוכל לבחור האם לדחוס את תמונות השאלות בפורמט WebP להקטנת גודל הקובץ לפני ההורדה:
+            </p>
+
+            <div style="background: var(--input-bg); border: 1px solid var(--border-color); border-radius: 12px; padding: 14px; margin-bottom: 16px;">
+                <label style="display: flex; align-items: center; justify-content: space-between; gap: 10px; cursor: pointer; user-select: none; margin-bottom: 14px;">
+                    <span style="font-weight: 600; font-size: .88rem; color: var(--text-primary);">הפעל דחיסת תמונות בייצוא</span>
+                    <input type="checkbox" id="compress-export-images" style="width: 18px; height: 18px; accent-color: var(--primary-color); cursor: pointer;">
+                </label>
+
+                <div id="compress-slider-wrap" style="opacity: 0.4; pointer-events: none; transition: opacity 0.2s ease;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                        <label for="compress-quality-slider" style="font-size: .84rem; font-weight: 600; color: var(--text-secondary);">איכות דחיסה:</label>
+                        <span id="compress-quality-val" style="font-size: .85rem; font-weight: 700; background: var(--card-bg); padding: 3px 10px; border-radius: 8px; border: 1px solid var(--border-color); color: var(--primary-color);">75% (מומלץ)</span>
+                    </div>
+                    <input type="range" id="compress-quality-slider" min="10" max="90" step="5" value="75" style="width: 100%; cursor: pointer; accent-color: var(--primary-color);">
+                    <div style="display: flex; justify-content: space-between; font-size: .72rem; color: var(--text-secondary); margin-top: 6px;">
+                        <span>10% (דחיסה מקסימלית)</span>
+                        <span>90% (איכות גבוהה)</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="actions" style="display: flex; gap: 10px;">
+                <button id="confirm-download-btn" type="button" class="success-btn" style="flex: 1; padding: 10px 16px; font-weight: 700; border-radius: 10px; border: none; cursor: pointer;">📥 הורד מבחן כעת</button>
+                <button id="compress-settings-cancel" type="button" class="secondary-btn" style="padding: 10px 16px; border-radius: 10px; cursor: pointer;">ביטול</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="full-guide-popup" class="help-popup">
+        <div class="help-popup-content guide-popup-content"
+            style="max-width: 680px; max-height: 88vh; overflow-y: auto; padding: 24px;">
+            <div
+                style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid var(--border-color); padding-bottom: 12px; margin-bottom: 16px;">
+                <div>
+                    <h2
+                        style="margin: 0; font-size: 1.25rem; color: var(--primary-color); display: flex; align-items: center; gap: 8px;">
+                        ✨ מדריך מהיר: הפיכת PDF למבחן אינטראקטיבי
+                    </h2>
+                    <span style="display: block; font-size: .84rem; color: var(--text-secondary); margin-top: 4px;">
+                        צרו מבחן תרגול דיגיטלי עצמאי (HTML) הפועל 100% אופליין בכל מכשיר — ב-4 צעדים פשוטים:
+                    </span>
+                </div>
+                <button id="full-guide-close-top" type="button"
+                    style="background: none; border: none; font-size: 1.5rem; cursor: pointer; color: var(--text-secondary); line-height: 1; padding: 2px 6px;">&times;</button>
+            </div>
+
+            <div style="display: grid; gap: 12px;">
+                <!-- Step 1 -->
+                <div
+                    style="background: var(--input-bg); border: 1px solid var(--border-color); border-radius: 12px; padding: 14px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <h4 style="margin: 0; font-size: .98rem; color: var(--primary-color); display: flex; align-items: center; gap: 6px;">
+                            <span>1️⃣</span> <span>העלאת קובץ PDF 📄</span>
+                        </h4>
+                        <span style="font-size: .75rem; background: rgba(59, 130, 246, 0.1); color: #2563eb; font-weight: 600; padding: 2px 8px; border-radius: 12px;">שלב 1</span>
+                    </div>
+                    <ul style="margin: 0; padding-right: 18px; font-size: .85rem; line-height: 1.6; color: var(--text-secondary);">
+                        <li><strong>PDF דיגיטלי (עם טקסט):</strong> המערכת תזהה מיד את הטקסט ותציג כפתור ירוק <strong>"⚡ חלץ שאלות מקומית כעת"</strong> — לחיצה אחת והשאלות נשלפות ישירות ללא צורך ב-AI!</li>
+                        <li><strong>PDF סרוק (תמונה):</strong> בסרגל העמודים מימין, לחצו על <strong>"🧹 ניקוי סטנדרטי"</strong> ואז <strong>"📥 הורד PDF נקי"</strong> לקבלת קובץ ממוקד ללא עמודי שער/הוראות.</li>
+                    </ul>
+                </div>
+
+                <!-- Step 2 -->
+                <div
+                    style="background: var(--input-bg); border: 1px solid var(--border-color); border-radius: 12px; padding: 14px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <h4 style="margin: 0; font-size: .98rem; color: var(--primary-color); display: flex; align-items: center; gap: 6px;">
+                            <span>2️⃣</span> <span>חילוץ שאלות עם AI וזיהוי שאלון 🤖</span>
+                        </h4>
+                        <span style="font-size: .75rem; background: rgba(245, 158, 11, 0.1); color: #d97706; font-weight: 600; padding: 2px 8px; border-radius: 12px;">שלב 2</span>
+                    </div>
+                    <ul style="margin: 0; padding-right: 18px; font-size: .85rem; line-height: 1.6; color: var(--text-secondary);">
+                        <li>לחצו על <strong>"📋 העתק פרומפט ל-AI"</strong> או על כפתור <strong>"✨ Freebuff"</strong>.</li>
+                        <li>הדביקו ב-ChatGPT / Claude / Gemini / Freebuff יחד עם קובץ ה-PDF.</li>
+                        <li>הפרומפט מנחה את ה-AI <strong>לזהות אוטומטית את מספר השאלון</strong> (למשל <code>&lt;!-- Form: 063 --&gt;</code>) ולשמור על סדר השאלות, האפשרויות ועמודי המקור.</li>
+                        <li>העתיקו את קוד ה-Markdown או שמרו כקובץ <code>questions.md</code>.</li>
+                    </ul>
+                </div>
+
+                <!-- Step 3 -->
+                <div
+                    style="background: var(--input-bg); border: 1px solid var(--border-color); border-radius: 12px; padding: 14px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <h4 style="margin: 0; font-size: .98rem; color: var(--primary-color); display: flex; align-items: center; gap: 6px;">
+                            <span>3️⃣</span> <span>טעינת שאלות ומיזוג פתרון רשמי 🔗</span>
+                        </h4>
+                        <span style="font-size: .75rem; background: rgba(16, 185, 129, 0.1); color: #059669; font-weight: 600; padding: 2px 8px; border-radius: 12px;">שלב 3</span>
+                    </div>
+                    <ul style="margin: 0; padding-right: 18px; font-size: .85rem; line-height: 1.6; color: var(--text-secondary);">
+                        <li>העלו את קובץ השאלות (<code>questions.md</code> או <code>.json</code>).</li>
+                        <li><strong>מיזוג תשובות רשמי:</strong> אם יש לכם קובץ מפתח תשובות (CSV / Excel), העלו אותו. המערכת תתאים את מספר השאלון (למשל טופס <code>63</code> או טופס <code>0</code>) ותמזג את התשובות הנכונות מיד.</li>
+                        <li><strong>תרשימים וטבלאות:</strong> לחיצה על <strong>"🖼️ חבר עמודי תרשים"</strong> תצמיד את תמונת עמוד ה-PDF לשאלות חזותיות, או השתמשו בכפתור <strong>"✂️ גזור תמונה"</strong> לעריכה מדויקת.</li>
+                    </ul>
+                </div>
+
+                <!-- Step 4 -->
+                <div
+                    style="background: var(--input-bg); border: 1px solid var(--border-color); border-radius: 12px; padding: 14px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <h4 style="margin: 0; font-size: .98rem; color: var(--primary-color); display: flex; align-items: center; gap: 6px;">
+                            <span>4️⃣</span> <span>תרגול מיידי וייצוא מבחן עצמאי 🚀</span>
+                        </h4>
+                        <span style="font-size: .75rem; background: rgba(139, 92, 246, 0.1); color: #7c3aed; font-weight: 600; padding: 2px 8px; border-radius: 12px;">שלב 4</span>
+                    </div>
+                    <ul style="margin: 0; padding-right: 18px; font-size: .85rem; line-height: 1.6; color: var(--text-secondary);">
+                        <li><strong>"▶ פתור מבחן כעת":</strong> פותח חלון תרגול אינטראקטיבי מיידי בדפדפן.</li>
+                        <li><strong>"📥 הורד מבחן עצמאי (HTML)":</strong> מפיק קובץ HTML יחיד שניתן לשלוח בוואטסאפ או במייל — עובד 100% ללא אינטרנט, שומר התקדמות מקומית, כולל שעון עצר, הסברים ומצב כהה.</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div style="margin-top: 16px; display: flex; justify-content: center; gap: 10px;">
+                <button id="full-guide-close" class="primary-btn" type="button"
+                    style="padding: 9px 32px; font-weight: 700; border-radius: 10px;">הבנתי, בוא נתחיל! 🚀</button>
+            </div>
+        </div>
+    </div>
+    <!-- Interactive Image Crop Modal -->
+    <div id="crop-modal" class="popup-backdrop hidden" style="position: fixed; inset: 0; z-index: 10000; background: rgba(0,0,0,0.85); display: none; align-items: center; justify-content: center; padding: 20px;">
+        <div style="background: var(--card-bg, #ffffff); border: 1px solid var(--border-color, #ccc); border-radius: 16px; width: 95%; max-width: 900px; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 20px 50px rgba(0,0,0,0.5);">
+            <div style="padding: 14px 20px; background: var(--input-bg, #f8fafc); border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
+                <h3 style="margin: 0; font-size: 1.1rem; color: var(--primary-color);">✂️ חיתוך תמונה מעמוד מקור לשאלה</h3>
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <label for="crop-page-select" style="font-size: .85rem; font-weight: 600;">עמוד מקור:</label>
+                    <select id="crop-page-select" style="padding: 4px 8px; border-radius: 6px; border: 1px solid var(--border-color); font: inherit; font-size: .85rem;"></select>
+                    <button id="crop-modal-close" type="button" class="secondary-btn sm-btn" style="border-radius: 50%; width: 32px; height: 32px; padding: 0;">✕</button>
+                </div>
+            </div>
+            <div style="padding: 10px; background: #0f172a; color: #94a3b8; font-size: .82rem; text-align: center;">
+                💡 <strong>הוראות חיתוך:</strong> לחץ וגרור בעזרת העכבר על גבי עמוד המבחן כדי לסמן את האזור הרצוי, ולאחר מכן לחץ על "גזור והצמד לשאלה".
+            </div>
+            <div id="crop-canvas-wrapper" style="flex: 1; overflow: auto; padding: 16px; text-align: center; position: relative; background: #1e293b;">
+                <canvas id="crop-canvas" style="max-width: 100%; border: 1px solid #334155; cursor: crosshair; box-shadow: 0 10px 30px rgba(0,0,0,0.5);"></canvas>
+            </div>
+            <div style="padding: 14px 20px; background: var(--input-bg, #f8fafc); border-top: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                <span id="crop-status-text" style="font-size: .85rem; color: var(--text-secondary);">סמן אזור לחיתוך בעכבר</span>
+                <div style="display: flex; gap: 8px;">
+                    <button id="crop-reset-btn" type="button" class="secondary-btn sm-btn">↺ איפוס בחירה</button>
+                    <button id="crop-cancel-btn" type="button" class="secondary-btn sm-btn">✕ ביטול</button>
+                    <button id="crop-save-btn" type="button" class="primary-btn sm-btn" style="font-weight: 700;">✂️ גזור והצמד לשאלה זו</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    </div>
+
+    <script>
+        document.getElementById('full-guide-btn')?.addEventListener('click', () => {
+            document.getElementById('full-guide-popup').classList.add('show');
+        });
+        document.getElementById('full-guide-close')?.addEventListener('click', () => {
+            document.getElementById('full-guide-popup').classList.remove('show');
+        });
+        document.getElementById('full-guide-close-top')?.addEventListener('click', () => {
+            document.getElementById('full-guide-popup').classList.remove('show');
+        });
+        document.getElementById('api-help-btn').addEventListener('click', () => {
+            document.getElementById('api-help-popup').classList.add('show');
+        });
+        document.getElementById('answer-help-btn').addEventListener('click', () => {
+            document.getElementById('answer-help-popup').classList.add('show');
+        });
+        document.getElementById('api-help-close').addEventListener('click', () => {
+            document.getElementById('api-help-popup').classList.remove('show');
+        });
+        document.getElementById('answer-help-close').addEventListener('click', () => {
+            document.getElementById('answer-help-popup').classList.remove('show');
+        });
+        document.getElementById('clean-pdf-help-close')?.addEventListener('click', () => {
+            document.getElementById('clean-pdf-help-popup').classList.remove('show');
+        });
+        document.getElementById('api-help-popup').addEventListener('click', (e) => {
+            if (e.target === e.currentTarget) document.getElementById('api-help-popup').classList.remove('show');
+        });
+        document.getElementById('answer-help-popup').addEventListener('click', (e) => {
+            if (e.target === e.currentTarget) document.getElementById('answer-help-popup').classList.remove('show');
+        });
+        document.getElementById('credential-popup').addEventListener('click', (e) => {
+            if (e.target === e.currentTarget) document.getElementById('credential-popup').classList.remove('show');
+        });
+        document.getElementById('clean-pdf-help-popup')?.addEventListener('click', (e) => {
+            if (e.target === e.currentTarget) document.getElementById('clean-pdf-help-popup').classList.remove('show');
+        });
+        document.getElementById('full-guide-popup')?.addEventListener('click', (e) => {
+            if (e.target === e.currentTarget) document.getElementById('full-guide-popup').classList.remove('show');
+        });
+        document.querySelectorAll('.file-clear').forEach(btn => {
+            const input = document.getElementById(btn.dataset.target);
+            input.addEventListener('change', () => {
+                btn.classList.toggle('hidden', !input.files?.length);
+            });
+            btn.addEventListener('click', () => {
+                input.value = '';
+                btn.classList.add('hidden');
+            });
+        });
+        document.querySelectorAll('.eye-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const input = document.getElementById(btn.dataset.target);
+                const isPassword = input.type === 'password';
+                input.type = isPassword ? 'text' : 'password';
+                btn.textContent = isPassword ? '🙈' : '👁️';
+            });
+        });
+
+        // Dynamic visibility: offline warning + auth section + invalid combinations blocker
+        (function () {
+            const ocrSel = document.getElementById('ocr-engine');
+            const policySel = document.getElementById('llm-policy');
+            const offlineWarn = document.querySelector('.offline-warning-box');
+            const authSection = document.getElementById('llm-auth-section');
+
+            function syncVisibility() {
+                if (!ocrSel || !policySel) return;
+
+                const ocrOfflineOption = ocrSel.querySelector('option[value="offline_local"]');
+                const ocrGeminiChunkedOption = ocrSel.querySelector('option[value="gemini_chunked"]');
+                const ocrGeminiNativeOption = ocrSel.querySelector('option[value="gemini_native"]');
+
+                const policyForceLlmOption = policySel.querySelector('option[value="force_llm"]');
+                const policyForceNoLlmOption = policySel.querySelector('option[value="force_no_llm"]');
+
+                // Reset disabled states first
+                if (ocrOfflineOption) ocrOfflineOption.disabled = false;
+                if (ocrGeminiChunkedOption) ocrGeminiChunkedOption.disabled = false;
+                if (ocrGeminiNativeOption) ocrGeminiNativeOption.disabled = false;
+
+                if (policyForceLlmOption) policyForceLlmOption.disabled = false;
+                if (policyForceNoLlmOption) policyForceNoLlmOption.disabled = false;
+
+                // 1. Check constraints from LLM Policy side
+                if (policySel.value === 'force_llm') {
+                    if (ocrOfflineOption) ocrOfflineOption.disabled = true;
+                    if (ocrSel.value === 'offline_local') {
+                        ocrSel.value = 'gemini_chunked';
+                    }
+                } else if (policySel.value === 'force_no_llm') {
+                    if (ocrGeminiChunkedOption) ocrGeminiChunkedOption.disabled = true;
+                    if (ocrGeminiNativeOption) ocrGeminiNativeOption.disabled = true;
+                    ocrSel.value = 'offline_local';
+                }
+
+                // 2. Check constraints from OCR Engine side
+                if (ocrSel.value === 'offline_local') {
+                    if (policyForceLlmOption) policyForceLlmOption.disabled = true;
+                    if (policySel.value === 'force_llm') {
+                        policySel.value = 'auto';
+                    }
+                } else if (ocrSel.value === 'gemini_chunked' || ocrSel.value === 'gemini_native') {
+                    if (policyForceNoLlmOption) policyForceNoLlmOption.disabled = true;
+                    if (policySel.value === 'force_no_llm') {
+                        policySel.value = 'auto';
+                    }
+                }
+
+                // 3. Update visibility of warning & authentication sections
+                if (offlineWarn) offlineWarn.classList.toggle('show', ocrSel.value === 'offline_local');
+                const hideAuth = policySel.value === 'force_no_llm' || ocrSel.value === 'offline_local';
+                if (authSection) authSection.classList.toggle('hidden', hideAuth);
+            }
+
+            ocrSel.addEventListener('change', syncVisibility);
+            policySel.addEventListener('change', syncVisibility);
+            syncVisibility();
+        })();
+
+        // PWA Service Worker Registration & Install Prompt Handler
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('sw.js').catch((err) => {
+                    console.warn('ServiceWorker registration deferred:', err);
+                });
+            });
+        }
+
+        let deferredPwaPrompt = null;
+        const pwaInstallBtn = document.getElementById('pwa-install-btn');
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPwaPrompt = e;
+            if (pwaInstallBtn) {
+                pwaInstallBtn.style.display = 'inline-flex';
+            }
+        });
+
+        pwaInstallBtn?.addEventListener('click', async () => {
+            if (!deferredPwaPrompt) return;
+            deferredPwaPrompt.prompt();
+            const { outcome } = await deferredPwaPrompt.userChoice;
+            if (outcome === 'accepted') {
+                pwaInstallBtn.style.display = 'none';
+            }
+            deferredPwaPrompt = null;
+        });
+
+        window.addEventListener('appinstalled', () => {
+            if (pwaInstallBtn) pwaInstallBtn.style.display = 'none';
+            deferredPwaPrompt = null;
+        });
+    </script>
+
+    <div id="toast-container" class="toast-container"></div>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+    <script src="quiz-core.js?v=2.1.0"></script>
+    <script src="quiz-export.js?v=2.1.0"></script>
+    <script src="js/progress-controller.js?v=2.1.0"></script>
+    <script src="js/gemini-service.js?v=2.1.0"></script>
+    <script src="js/pdf-service.js?v=2.1.0"></script>
+    <script src="js/ocr-tesseract.js?v=2.1.0"></script>
+    <script src="js/question-parser.js?v=2.1.0"></script>
+    <script src="js/cropper-modal.js?v=2.1.0"></script>
+    <script src="js/editor-ui.js?v=2.1.0"></script>
+    <script src="js/export-service.js?v=2.1.0"></script>
+    <script src="generator.js?v=2.1.0"></script>
+</body>
+
+</html>

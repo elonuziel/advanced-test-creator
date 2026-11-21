@@ -1,0 +1,223 @@
+name: Build Desktop GUI
+
+on:
+  push:
+    branches: [ main ]
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  models: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Linux GUI runtime libraries
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libxkbcommon-x11-0
+      - name: Install project test dependencies
+        working-directory: quiz-builder-app
+        run: python -m pip install -e ".[test]"
+      - name: Run tests
+        working-directory: quiz-builder-app
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m pytest -q
+
+  build:
+    needs: test
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact: linux-gui
+            path: quiz-builder-app/dist/quiz_builder_gui
+          - os: windows-latest
+            artifact: windows-gui
+            path: quiz-builder-app/dist/quiz_builder_gui.exe
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install GUI and packaging dependencies
+        working-directory: quiz-builder-app
+        run: python -m pip install -e ".[package]"
+
+      - name: Determine Release Tag
+        id: tag_name
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            TAG="${GITHUB_REF#refs/tags/}"
+          else
+            TAG="v2.1.${{ github.run_number }}"
+          fi
+          echo "TAG_NAME=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Generate AI Release Notes
+        id: changelog
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          LAST_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || true)
+
+          if [ -z "$LAST_TAG" ]; then
+            COMMITS=$(git log -n 25 --pretty=format:"- %s" HEAD)
+          else
+            COMMITS=$(git log --pretty=format:"- %s" "${LAST_TAG}..HEAD")
+          fi
+
+          if [ -z "$COMMITS" ]; then
+            COMMITS=$(git log -n 10 --pretty=format:"- %s" HEAD)
+          fi
+
+          PROMPT="Summarize the following git commits into a clean, readable release changelog (2-5 bullet points) focusing on user-facing features and bug fixes. Do not include top-level markdown headers or version bump chore commits:\n\n$COMMITS"
+
+          SUMMARY=""
+
+          # 1. Try Groq API
+          if [ -z "$SUMMARY" ] && [ -n "$GROQ_API_KEY" ]; then
+            echo "Requesting AI summary from Groq API..."
+            jq -n --arg model "openai/gpt-oss-120b" --arg sys "You generate concise, readable release notes for an interactive quiz builder. Summarize git commits into 2-5 clean bullet points (Improvements, Fixes). Do not include raw commit hashes, version bump chore commits, or markdown title headers." --arg user "$COMMITS" \
+              '{model: $model, messages: [{role: "system", content: $sys}, {role: "user", content: $user}]}' > .changelog-payload.json
+
+            curl -sS "https://api.groq.com/openai/v1/chat/completions" \
+              -H "Content-Type: application/json" \
+              -H "Authorization: Bearer $GROQ_API_KEY" \
+              -d @.changelog-payload.json > .changelog-response.json || true
+
+            SUMMARY=$(jq -r '.choices[0].message.content // empty' .changelog-response.json 2>/dev/null || true)
+          fi
+
+          # 2. Try Gemini API
+          if [ -z "$SUMMARY" ] && [ -n "$GEMINI_API_KEY" ]; then
+            echo "Requesting AI summary from Gemini API..."
+            jq -n --arg text "$PROMPT" \
+              '{contents: [{parts: [{text: $text}]}]}' > .changelog-payload.json
+
+            curl -sS "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=$GEMINI_API_KEY" \
+              -H "Content-Type: application/json" \
+              -d @.changelog-payload.json > .changelog-response.json || true
+
+            SUMMARY=$(jq -r '.candidates[0].content.parts[0].text // empty' .changelog-response.json 2>/dev/null || true)
+          fi
+
+          # 3. Try OpenAI API
+          if [ -z "$SUMMARY" ] && [ -n "$OPENAI_API_KEY" ]; then
+            echo "Requesting AI summary from OpenAI API..."
+            jq -n --arg model "gpt-4o-mini" --arg user "$PROMPT" \
+              '{model: $model, messages: [{role: "user", content: $user}]}' > .changelog-payload.json
+
+            curl -sS "https://api.openai.com/v1/chat/completions" \
+              -H "Content-Type: application/json" \
+              -H "Authorization: Bearer $OPENAI_API_KEY" \
+              -d @.changelog-payload.json > .changelog-response.json || true
+
+            SUMMARY=$(jq -r '.choices[0].message.content // empty' .changelog-response.json 2>/dev/null || true)
+          fi
+
+          # 4. Output summary or smart grouping fallback
+          if [ -n "$SUMMARY" ] && [ "$SUMMARY" != "null" ]; then
+              echo "AI Summary generated successfully!"
+              echo "$SUMMARY" > changelog.txt
+          else
+              echo "AI Summary unavailable or failed, falling back to smart keyword grouping..."
+              [ -f .changelog-response.json ] && cat .changelog-response.json || true
+
+              FEATURES=""
+              FIXES=""
+              OTHER=""
+
+              while IFS= read -r line; do
+                [ -z "$line" ] && continue
+                lower=$(echo "$line" | tr '[:upper:]' '[:lower:]')
+                if echo "$lower" | grep -qE "^- (feat|add|new|improv|updat|enhanc)"; then
+                  FEATURES="${FEATURES}\n${line}"
+                elif echo "$lower" | grep -qE "^- (fix|bug|patch|resolv|correct|revert)"; then
+                  FIXES="${FIXES}\n${line}"
+                else
+                  OTHER="${OTHER}\n${line}"
+                fi
+              done <<< "$COMMITS"
+
+              BODY=""
+              if [ -n "$FEATURES" ]; then
+                BODY="${BODY}\n### ⚡ Improvements${FEATURES}\n"
+              fi
+              if [ -n "$FIXES" ]; then
+                BODY="${BODY}\n### 🐛 Fixes${FIXES}\n"
+              fi
+              if [ -n "$OTHER" ]; then
+                BODY="${BODY}\n### 🔧 Other Changes${OTHER}\n"
+              fi
+
+              if [ -z "$BODY" ] || [ "$BODY" = "\n" ]; then
+                BODY="- General updates and improvements"
+              fi
+
+              printf "%b\n" "$BODY" > changelog.txt
+          fi
+
+          echo "Generated changelog:"
+          cat changelog.txt
+
+      - name: Build Linux GUI bundle
+        if: runner.os == 'Linux'
+        working-directory: quiz-builder-app
+        run: python build_gui.py
+
+      - name: Build & Sign Windows GUI bundle
+        if: runner.os == 'Windows'
+        run: |
+          python quiz-builder-app/build_exe.py --version ${{ steps.tag_name.outputs.TAG_NAME }}
+          $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=Elon Uziel, O=Elon Uziel" -CertStoreLocation "Cert:\CurrentUser\My"
+          Set-AuthenticodeSignature -FilePath "quiz-builder-app/dist/quiz_builder_gui.exe" -Certificate $cert -HashAlgorithm SHA256
+
+      - name: Package Linux bundle
+        if: runner.os == 'Linux'
+        run: tar -czf interactive-quiz-builder-gui-linux-x86_64.tar.gz -C quiz-builder-app/dist quiz_builder_gui
+
+      - name: Package Windows bundle
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path quiz-builder-app/dist/quiz_builder_gui.exe -DestinationPath interactive-quiz-builder-gui-windows-x64.zip -Force
+
+      - name: Upload GUI bundle artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.path }}
+
+      - name: Attach Linux bundle to GitHub Release
+        if: runner.os == 'Linux'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag_name.outputs.TAG_NAME }}
+          name: ${{ steps.tag_name.outputs.TAG_NAME }}
+          body_path: changelog.txt
+          files: interactive-quiz-builder-gui-linux-x86_64.tar.gz
+
+      - name: Attach Windows bundle to GitHub Release
+        if: runner.os == 'Windows'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag_name.outputs.TAG_NAME }}
+          name: ${{ steps.tag_name.outputs.TAG_NAME }}
+          body_path: changelog.txt
+          files: |
+            interactive-quiz-builder-gui-windows-x64.zip
+            quiz-builder-app/dist/quiz_builder_gui.exe
